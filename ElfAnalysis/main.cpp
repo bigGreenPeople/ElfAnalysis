@@ -1,10 +1,34 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <ctype.h>
+#include <malloc.h>
+
 #include "elf.h"
 
 void help();
-void finleheader(FILE * fp);
+void file_header(FILE * fp);
+void section_header(FILE * fp);
+
+
+//字符串大写
+char * my_strupr(char *str)
+{
+	char *orign = (char *)malloc(strlen(str) + 1);
+
+	strcpy_s(orign, strlen(str) + 1, str);
+
+
+	char * tmp = orign;
+	while (*tmp) {
+		*tmp = toupper(*tmp);
+		tmp++;
+	}
+
+
+	return orign;
+}
+
 
 int main(int argc, char* argv[]) {
 	if (argc < 3)
@@ -15,7 +39,7 @@ int main(int argc, char* argv[]) {
 
 	FILE *fp;
 	errno_t err = 0;
-	
+
 
 	/*printf("1: %s\n", argv[0]);
 	printf("2: %s\n", argv[1]);
@@ -28,7 +52,10 @@ int main(int argc, char* argv[]) {
 	}
 	printf("-----------------------------------------------------------------------------------------------------\n");
 	if (!strcmp(argv[1], "-h")) {
-		finleheader(fp);
+		file_header(fp);
+	}
+	else if (!strcmp(argv[1], "-S")) {
+		section_header(fp);
 	}
 
 	//help();
@@ -46,11 +73,148 @@ int main(int argc, char* argv[]) {
 	return 0;
 }
 
+void section_header(FILE * fp) {
+	Elf32_Ehdr elf_head;
+	fread(&elf_head, sizeof(Elf32_Ehdr), 1, fp);
+	printf("共有 %d 个节头, 节头表开始文件偏移为 0x%02x:\n", elf_head.e_shnum, elf_head.e_shoff);
+	//Elf32_Shdr是描述每个节表的结构体，先通过Elf64_Shdr大小*elf_head.e_shnum节表数量得到要分配的内存
+	//这是一个Elf32_Shdr数组
+	Elf32_Shdr *shdr = (Elf32_Shdr*)malloc(sizeof(Elf32_Shdr) * elf_head.e_shnum);
+	if (shdr == NULL) {
+		printf("shdr malloc failed\n");
+		exit(0);
+	}
+	int a = 0;
+	//移动fp位置
+	a = fseek(fp, elf_head.e_shoff, SEEK_SET);
+	if (a != 0) {
+		printf("shdr fseek ERROR\n");
+		exit(0);
+	}
+
+	a = fread(shdr, sizeof(Elf32_Shdr) * elf_head.e_shnum, 1, fp);
+	if (a == 0) {
+		printf("READ ERROR\n");
+		exit(0);
+	}
+	//设置文件位置为给定流 stream 的文件的开头。
+	rewind(fp);
+	//定位到字符串节位置
+	a = fseek(fp, (long)shdr[elf_head.e_shstrndx].sh_offset, SEEK_SET);
+	if (a != 0) {
+		printf("定位到字符串节表位置 %d \n", shdr[elf_head.e_shstrndx].sh_offset);
+		printf("定位到字符串节表位置 shstrtab fseek ERROR \n");
+		exit(0);
+	}
+	//得到字符串节表的长度（字节数）
+	int sh_size = shdr[elf_head.e_shstrndx].sh_size;
+	//char shstrtab[i];
+	//分配容纳字符串节区的大小
+	char *shstrtab = (char*)malloc(sizeof(char) * sh_size);
+	char *temp = shstrtab;
+
+	a = fread(shstrtab, sh_size, 1, fp);
+	if (a == 0) {
+		printf("READ ERROR\n");
+		exit(0);
+	}
+	printf("\n各个section表信息:\n\n");
+	printf("%-5s %-22s %-23s %-8s %-8s %-7s %-3s %-3s %-3s %-3s %-3s\n", "索引", "名称", "类型", "内存地址", "文件偏移", "大小", "ES", "标志", "链接", "附加信息", "对齐");
+	for (int shnum = 0; shnum < elf_head.e_shnum; shnum++) {
+		temp = shstrtab;
+		//shdr[shnum].sh_name字符串表的偏移
+		temp = temp + shdr[shnum].sh_name;
+		char *type_name = NULL;
+		int has_free = 0;
+
+		switch (shdr[shnum].sh_type)
+		{
+		case SHT_NULL:
+			type_name = (char *)"NULL(无意义)";
+			break;
+		case SHT_PROGBITS:
+			type_name = (char *)"PROGBITS(程序定义信息)";
+			break;
+		case SHT_SYMTAB:
+			type_name = (char *)"SYMTAB(符号表)";
+			break;
+		case SHT_STRTAB:
+			type_name = (char *)"STRTAB(字符串表)";
+			break;
+		case SHT_RELA:
+			type_name = (char *)"RELA(重定位表项)";
+			break;
+		case SHT_HASH:
+			type_name = (char *)"HASH(符号哈希表)";
+			break;
+		case SHT_DYNAMIC:
+			type_name = (char *)"DYNAMIC(动态链接信息)";
+			break;
+		case SHT_NOTE:
+			type_name = (char *)"NOTE(标记文件信息)";
+			break;
+		case SHT_NOBITS:
+			type_name = (char *)"NOBITS(不占用文件空间)";
+			break;
+		case SHT_REL:
+			type_name = (char *)"REL(重定位表项)";
+			break;
+		case SHT_SHLIB:
+			type_name = (char *)"SHLIB(此节区被保留)";
+			break;
+		case SHT_DYNSYM:
+			type_name = (char *)"DYNSYM(完整符号表)";
+			break;
+		default:
+			type_name = my_strupr(temp);
+			has_free = 1;
+			break;
+		}
+		//标志解析
+		char * flags = (char*)"";
+		switch (shdr[shnum].sh_flags)
+		{
+		case SHF_WRITE:
+			flags = (char *)"W";
+			break;
+		case SHF_ALLOC:
+			flags = (char *)"A";
+			break;
+		case SHF_EXECINSTR:
+			flags = (char *)"X";
+			break;
+		case SHF_WRITE|SHF_ALLOC:
+			flags = (char *)"WA";
+			break;
+		case SHF_EXECINSTR | SHF_ALLOC:
+			flags = (char *)"AX";
+			break;
+		case SHF_MASKPROC:
+			flags = (char *)"MS";
+			break;
+		case SHF_LINK_ORDER| SHF_ALLOC:
+			flags = (char *)"AL";
+			break; 
+		case 48:
+			flags = (char *)"MS";
+			break;
+		default:
+			break;
+		}
+		printf("%-5d %-22s %-23s %-8.08X %-8.06X %-5.06X  %-3.02X %-4s %-5d %-8d %-5d\n",
+			shnum, temp, type_name, shdr[shnum].sh_addr,
+			shdr[shnum].sh_offset, shdr[shnum].sh_size, shdr[shnum].sh_entsize, flags,
+			shdr[shnum].sh_link, shdr[shnum].sh_info, shdr[shnum].sh_addralign);
+		if (has_free)
+			free(type_name);
+	}
+}
+
 //打印ELF头部信息
-void finleheader(FILE * fp) {
+void file_header(FILE * fp) {
 	printf("ELF Header:\n");
 	Elf32_Ehdr elf_head;
-	
+
 	int a;
 
 	a = fread(&elf_head, sizeof(Elf32_Ehdr), 1, fp);
