@@ -9,28 +9,251 @@
 void help();
 void file_header(FILE * fp);
 void section_header(FILE * fp);
+void dynsym_table(FILE * fp);
+void program_table(FILE * fp);
+int print_dynsym_table_entry(FILE * fp, char *dynstr, int dynsym_num);
+int fp_move(FILE * fp, int offset);
+char * my_strupr(char *str);
+char * get_strtab(FILE * fp, Elf32_Shdr shdr);
+Elf32_Shdr * get_elf_shdr(FILE * fp, Elf32_Ehdr elf_head);
+Elf32_Phdr * get_elf_phdr(FILE * fp, Elf32_Ehdr elf_head);
 
 
-//字符串大写
-char * my_strupr(char *str)
-{
-	char *orign = (char *)malloc(strlen(str) + 1);
+/*
+	得到ELF节表数组
+	需释放内存
+*/
+Elf32_Shdr * get_elf_shdr(FILE * fp, Elf32_Ehdr elf_head) {
+	//Elf32_Shdr是描述每个节表的结构体，先通过Elf64_Shdr大小*elf_head.e_shnum节表数量得到要分配的内存
+	Elf32_Shdr *shdr = (Elf32_Shdr*)malloc(sizeof(Elf32_Shdr) * elf_head.e_shnum);
+	memset(shdr, 0, sizeof(Elf32_Shdr) * elf_head.e_shnum);
 
-	strcpy_s(orign, strlen(str) + 1, str);
-
-
-	char * tmp = orign;
-	while (*tmp) {
-		*tmp = toupper(*tmp);
-		tmp++;
+	if (shdr == NULL) {
+		printf("shdr malloc failed\n");
+		return NULL;
 	}
 
-
-	return orign;
+	int result = 0;
+	//移动fp位置
+	result = fseek(fp, elf_head.e_shoff, SEEK_SET);
+	if (result != 0) {
+		printf("shdr fseek ERROR\n");
+		free(shdr);
+		return NULL;
+	}
+	//读取数据
+	result = fread(shdr, sizeof(Elf32_Shdr), elf_head.e_shnum, fp);
+	if (result == 0) {
+		printf("READ ERROR\n");
+		free(shdr);
+		return NULL;
+	}
+	return shdr;
 }
 
 
+/*
+	得到ELF段表数组
+	需释放内存
+*/
+Elf32_Phdr * get_elf_phdr(FILE * fp, Elf32_Ehdr elf_head) {
+	//Elf32_Shdr是描述每个节表的结构体，先通过Elf64_Shdr大小*elf_head.e_shnum节表数量得到要分配的内存
+	Elf32_Phdr *phdr = (Elf32_Phdr*)malloc(sizeof(Elf32_Phdr) * elf_head.e_phnum);
+	memset(phdr, 0, sizeof(Elf32_Phdr) * elf_head.e_phnum);
+
+	if (phdr == NULL) {
+		printf("phdr malloc failed\n");
+		return NULL;
+	}
+
+	int result = 0;
+	//移动fp位置
+	result = fseek(fp, elf_head.e_phoff, SEEK_SET);
+	if (result != 0) {
+		printf("phdr fseek ERROR\n");
+		free(phdr);
+		return NULL;
+	}
+	//读取数据
+	result = fread(phdr, sizeof(Elf32_Phdr), elf_head.e_phnum, fp);
+	if (result == 0) {
+		printf("READ ERROR\n");
+		free(phdr);
+		return NULL;
+	}
+	return phdr;
+}
+
+/*
+	得到.shstrtab或.dynstr的字符串
+	需释放内存
+	shdr 一般是.dynstr或者.shstrtab
+*/
+char * get_strtab(FILE * fp, Elf32_Shdr shdr) {
+
+	//定位到字符串节位置
+	if (fp_move(fp, shdr.sh_offset)) {
+		return NULL;
+	}
+
+	//得到字符串节表的长度（字节数）
+	int sh_size = shdr.sh_size;
+	//char shstrtab[i];
+	//分配容纳字符串节区的大小
+	char *shstrtab = (char*)malloc(sizeof(char) * sh_size);
+	memset(shstrtab, 0, sizeof(char) * sh_size);
+
+	if (shstrtab == NULL) {
+		printf("分配内存 str ERROR \n");
+		return NULL;
+	}
+
+	int result;
+	result = fread(shstrtab, sh_size, 1, fp);
+	if (result == 0) {
+		printf("READ ERROR\n");
+		free(shstrtab);
+		return NULL;
+	}
+	return shstrtab;
+}
+
+
+//移动fp  失败返回0
+int fp_move(FILE * fp, int offset) {
+	rewind(fp);
+	int result;
+
+	result = fseek(fp, offset, SEEK_SET);
+	if (result != 0) {
+		printf("fp_move ERROR \n");
+		return 0;
+	}
+}
+
+//打印符号表项
+int print_dynsym_table_entry(FILE * fp, char *dynstr, int dynsym_num) {
+
+	//开辟内存
+	Elf32_Sym *psym = (Elf32_Sym*)malloc(sizeof(Elf32_Sym) *dynsym_num);
+	memset(psym, 0, sizeof(Elf32_Sym) *dynsym_num);
+	if (psym == NULL) {
+		printf("psym malloc failed\n");
+		return 0;
+	}
+	//读取符号表
+	int result;
+	result = fread(psym, sizeof(Elf32_Sym), dynsym_num, fp);
+	if (result == 0) {
+		printf("READ ERROR\n");
+		free(psym);
+		return 0;
+	}
+
+	printf("%-5s %-8s %-8s %-8s %-8s %-8s %-8s %-8s\n", "Num", "Value", "大小", "类型", "绑定属性", "Vis", "Ndx", "名称");
+	for (int dynsym_index = 0; dynsym_index < dynsym_num; dynsym_index++) {
+
+		char * sym_type = (char *) "";
+		switch (ELF32_ST_TYPE(psym[dynsym_index].st_info))
+		{
+		case STT_NOTYPE:
+			sym_type = (char *)"NOTYPE";
+			break;
+		case STT_OBJECT:
+			sym_type = (char *)"OBJECT";
+			break;
+		case STT_FUNC:
+			sym_type = (char *)"FUNC";
+			break;
+		case STT_SECTION:
+			sym_type = (char *)"SECTION";
+			break;
+		case STT_FILE:
+			sym_type = (char *)"FILE";
+			break;
+		case STT_LOPROC:
+			sym_type = (char *)"LOPROC";
+			break;
+		case STT_HIPROC:
+			sym_type = (char *)"HIPROC";
+			break;
+		default:
+			break;
+		}
+
+		char * sym_bind = (char *) "";
+		switch (ELF32_ST_BIND(psym[dynsym_index].st_info))
+		{
+		case STB_LOCAL:
+			sym_bind = (char *)"LOCAL";
+			break;
+		case STB_GLOBAL:
+			sym_bind = (char *)"GLOBAL";
+			break;
+		case STB_WEAK:
+			sym_bind = (char *)"WEAK";
+			break;
+		case STB_HIPROC:
+			sym_bind = (char *)"HIPROC";
+			break;
+		default:
+			break;
+		}
+
+		char * sym_vis = (char *) "";
+		switch (ELF32_ST_VISIBILITY(psym[dynsym_index].st_other))
+		{
+		case STV_DEFAULT:
+			sym_vis = (char *)"DEFAULT";
+			break;
+		case STV_INTERNAL:
+			sym_vis = (char *)"INTERNAL";
+			break;
+		case STV_HIDDEN:
+			sym_vis = (char *)"HIDDEN";
+			break;
+		case STV_PROTECTED:
+			sym_vis = (char *)"PROTECTED";
+			break;
+		default:
+			break;
+		}
+
+		char sym_ndx[10] = { 0 };
+		switch (psym[dynsym_index].st_shndx)
+		{
+		case SHN_ABS:
+			strcpy_s(sym_ndx, strlen("ABS") + 1, "ABS");
+			break;
+		case SHN_COMMON:
+			strcpy_s(sym_ndx, strlen("COMMON") + 1, "COMMON");
+			break;
+		case SHN_UNDEF:
+			strcpy_s(sym_ndx, strlen("UND") + 1, "UND");
+			break;
+		default:
+			_itoa_s(psym[dynsym_index].st_shndx, sym_ndx, 10);
+			break;
+		}
+
+		printf("%-5d %-8.08X %-8d %-8s %-8s %-8s %-8s %-8s\n",
+			dynsym_index, psym[dynsym_index].st_value, psym[dynsym_index].st_size, sym_type, sym_bind, sym_vis
+			, sym_ndx, dynstr+ psym[dynsym_index].st_name);
+	}
+
+	free(psym);
+	return 1;
+}
+
+
+
 int main(int argc, char* argv[]) {
+
+	if (!strcmp(argv[1], "-help")) {
+		help();
+		exit(0);
+	}
+
 	if (argc < 3)
 	{
 		printf("invalid arguments\n");
@@ -44,7 +267,7 @@ int main(int argc, char* argv[]) {
 	/*printf("1: %s\n", argv[0]);
 	printf("2: %s\n", argv[1]);
 	printf("3: %s\n", argv[2]);*/
-	err = fopen_s(&fp, argv[2], "r");
+	err = fopen_s(&fp, argv[2], "rb");
 	if (NULL == fp)
 	{
 		printf("open file fail\n");
@@ -57,7 +280,12 @@ int main(int argc, char* argv[]) {
 	else if (!strcmp(argv[1], "-S")) {
 		section_header(fp);
 	}
-
+	else if (!strcmp(argv[1], "-s")) {
+		dynsym_table(fp);
+	}
+	else if (!strcmp(argv[1], "-l")) {
+		program_table(fp);
+	}
 	//help();
 
 	if (fp) {
@@ -73,51 +301,95 @@ int main(int argc, char* argv[]) {
 	return 0;
 }
 
+//解析段头表
+void program_table(FILE * fp) {
+	Elf32_Ehdr elf_head;
+	fread(&elf_head, sizeof(Elf32_Ehdr), 1, fp);
+	printf("共有 %d 个段头, 段头表开始文件偏移为 0x%02x:\n\n", elf_head.e_phnum, elf_head.e_phoff);
+	//这是一个段表数组
+	Elf32_Phdr *phdr = get_elf_phdr(fp, elf_head);
+	if (!phdr) {
+		exit(0);
+	}
+
+
+
+	free(phdr);
+}
+
+//解析.dynsym符号表
+void dynsym_table(FILE * fp) {
+	//得到ELF文件头
+	Elf32_Ehdr elf_head;
+	fread(&elf_head, sizeof(Elf32_Ehdr), 1, fp);
+	//得到节表数组
+	Elf32_Shdr *shdr = get_elf_shdr(fp, elf_head);
+	if (!shdr) {
+		return;
+	}
+
+	//得到.strtab
+	char *shstrtab = get_strtab(fp, shdr[elf_head.e_shstrndx]);
+	if (!shstrtab) {
+		free(shdr);
+		return;
+	}
+	char *temp = shstrtab;
+	//找到.dynstr表
+	char * dynstr = NULL;
+	for (int shnum = 0; shnum < elf_head.e_shnum; ++shnum) {
+		temp = shstrtab;
+		//shdr[shnum].sh_name字符串表的偏移
+		temp = temp + shdr[shnum].sh_name;
+		if (!strcmp(temp, ".dynstr"))
+		{
+			dynstr = get_strtab(fp, shdr[shnum]);
+			if (!dynstr) {
+				free(shdr);
+				free(shstrtab);
+				return;
+			}
+			break;
+		}
+	}
+	//遍历节表
+	for (int shnum = 0; shnum < elf_head.e_shnum; ++shnum) {
+		temp = shstrtab;
+		//shdr[shnum].sh_name字符串表的偏移
+		temp = temp + shdr[shnum].sh_name;
+		if (!strcmp(temp, ".dynsym") || !strcmp(temp, ".symtab"))
+		{
+			int dynsym_num = shdr[shnum].sh_size / shdr[shnum].sh_entsize;
+			printf("符号表'.dynsym'包含%d个条目\n\n", dynsym_num);
+			if (fp_move(fp, shdr[shnum].sh_offset)) {
+				exit(0);
+			}
+			print_dynsym_table_entry(fp, dynstr, dynsym_num);
+		}
+	}
+
+	free(dynstr);
+	free(shstrtab);
+	free(shdr);
+}
+
+//解析节表
 void section_header(FILE * fp) {
 	Elf32_Ehdr elf_head;
 	fread(&elf_head, sizeof(Elf32_Ehdr), 1, fp);
 	printf("共有 %d 个节头, 节头表开始文件偏移为 0x%02x:\n", elf_head.e_shnum, elf_head.e_shoff);
-	//Elf32_Shdr是描述每个节表的结构体，先通过Elf64_Shdr大小*elf_head.e_shnum节表数量得到要分配的内存
 	//这是一个Elf32_Shdr数组
-	Elf32_Shdr *shdr = (Elf32_Shdr*)malloc(sizeof(Elf32_Shdr) * elf_head.e_shnum);
-	if (shdr == NULL) {
-		printf("shdr malloc failed\n");
+	Elf32_Shdr *shdr = get_elf_shdr(fp,elf_head);
+	if (!shdr) {
 		exit(0);
 	}
-	int a = 0;
-	//移动fp位置
-	a = fseek(fp, elf_head.e_shoff, SEEK_SET);
-	if (a != 0) {
-		printf("shdr fseek ERROR\n");
+	//得到字符串表信息
+	char *shstrtab = get_strtab(fp, shdr[elf_head.e_shstrndx]);
+	if (!shstrtab) {
 		exit(0);
 	}
-
-	a = fread(shdr, sizeof(Elf32_Shdr) * elf_head.e_shnum, 1, fp);
-	if (a == 0) {
-		printf("READ ERROR\n");
-		exit(0);
-	}
-	//设置文件位置为给定流 stream 的文件的开头。
-	rewind(fp);
-	//定位到字符串节位置
-	a = fseek(fp, (long)shdr[elf_head.e_shstrndx].sh_offset, SEEK_SET);
-	if (a != 0) {
-		printf("定位到字符串节表位置 %d \n", shdr[elf_head.e_shstrndx].sh_offset);
-		printf("定位到字符串节表位置 shstrtab fseek ERROR \n");
-		exit(0);
-	}
-	//得到字符串节表的长度（字节数）
-	int sh_size = shdr[elf_head.e_shstrndx].sh_size;
-	//char shstrtab[i];
-	//分配容纳字符串节区的大小
-	char *shstrtab = (char*)malloc(sizeof(char) * sh_size);
 	char *temp = shstrtab;
 
-	a = fread(shstrtab, sh_size, 1, fp);
-	if (a == 0) {
-		printf("READ ERROR\n");
-		exit(0);
-	}
 	printf("\n各个section表信息:\n\n");
 	printf("%-5s %-22s %-23s %-8s %-8s %-7s %-3s %-3s %-3s %-3s %-3s\n", "索引", "名称", "类型", "内存地址", "文件偏移", "大小", "ES", "标志", "链接", "附加信息", "对齐");
 	for (int shnum = 0; shnum < elf_head.e_shnum; shnum++) {
@@ -183,7 +455,7 @@ void section_header(FILE * fp) {
 		case SHF_EXECINSTR:
 			flags = (char *)"X";
 			break;
-		case SHF_WRITE|SHF_ALLOC:
+		case SHF_WRITE | SHF_ALLOC:
 			flags = (char *)"WA";
 			break;
 		case SHF_EXECINSTR | SHF_ALLOC:
@@ -192,9 +464,9 @@ void section_header(FILE * fp) {
 		case SHF_MASKPROC:
 			flags = (char *)"MS";
 			break;
-		case SHF_LINK_ORDER| SHF_ALLOC:
+		case SHF_LINK_ORDER | SHF_ALLOC:
 			flags = (char *)"AL";
-			break; 
+			break;
 		case 48:
 			flags = (char *)"MS";
 			break;
@@ -208,6 +480,8 @@ void section_header(FILE * fp) {
 		if (has_free)
 			free(type_name);
 	}
+	free(shstrtab);
+	free(shdr);
 }
 
 //打印ELF头部信息
@@ -360,4 +634,21 @@ void help()
 	printf("-s            :符号表信息\n");
 	printf("-l            :程序头信息\n");
 	printf("-r            :重定位表信息\n");
+}
+
+
+//字符串大写
+char * my_strupr(char *str)
+{
+	char *orign = (char *)malloc(strlen(str) + 1);
+
+	strcpy_s(orign, strlen(str) + 1, str);
+
+
+	char * tmp = orign;
+	while (*tmp) {
+		*tmp = toupper(*tmp);
+		tmp++;
+	}
+	return orign;
 }
