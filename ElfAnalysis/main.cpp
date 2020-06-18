@@ -311,10 +311,113 @@ void program_table(FILE * fp) {
 	if (!phdr) {
 		exit(0);
 	}
+	//这是一个Elf32_Shdr数组
+	Elf32_Shdr *shdr = get_elf_shdr(fp, elf_head);
+	if (!shdr) {
+		exit(0);
+	}
+	//得到字符串表信息
+	char *shstrtab = get_strtab(fp, shdr[elf_head.e_shstrndx]);
+	if (!shstrtab) {
+		exit(0);
+	}
+	char *temp = shstrtab;
+
+	printf("\n各个Program表信息:\n");
+	printf("%-5s %-20s %-8s %-8s %-8s %-8s %-8s %-8s %-8s\n",
+		"","类型", "文件偏移", "内存地址", "物理地址", "文件大小", "内存大小", "标志","对齐");
+	for (int phnum = 0; phnum < elf_head.e_phnum; phnum++) {
+
+		char * type_name = (char *)"";
+		switch (phdr[phnum].p_type)
+		{
+		case PT_NULL:
+			type_name = (char *)"NULL(空段)";
+			break;
+		case PT_LOAD:
+			type_name = (char *)"LOAD(可装载)";
+			break;
+		case PT_DYNAMIC:
+			type_name = (char *)"DYNAMIC(动态链接信息)";
+		case PT_INTERP:
+			type_name = (char *)"INTERP(动态链接解释)";
+			break;
+		case PT_NOTE:
+			type_name = (char *)"NOTE(专有的编译器信息)";
+			break;
+		case PT_SHLIB:
+			type_name = (char *)"SHLIB(共享库)";
+			break;
+		case PT_GNU_STACK:
+			type_name = (char *)"GNU_STACK";
+			break;
+		case PT_PHDR:
+			type_name = (char *)"PHDR";
+			break;
+		case PT_GNU_RELRO:
+			type_name = (char *)"GNU_RELRO";
+			break;
+		case PT_ARM_EXIDX:
+			type_name = (char *)"EXIDX";
+			break;
+		default:
+			break;
+		}
+
+		char * flag_name = (char *)"";
+		switch (phdr[phnum].p_flags) {
+		case PF_R:
+			flag_name = (char *)"R";
+			break;
+		case PF_W:
+			flag_name = (char *)"W";
+			break;
+		case PF_X:
+			flag_name = (char *)"E";
+			break;
+		case PF_W| PF_X:
+			flag_name = (char *)"WE";
+			break;
+		case PF_R |PF_W:
+			flag_name = (char *)"RW";
+			break;
+		case PF_R | PF_X:
+			flag_name = (char *)"RE";
+			break;
+		default:
+			break;
+		}
 
 
+		printf("%-5d %-20s %-8.6X %-8.8X %-8.8X %-8.6X%-8.6X %-8s %-8.6X\n", phnum,
+			type_name, phdr[phnum].p_offset, phdr[phnum].p_vaddr,
+			phdr[phnum].p_paddr, phdr[phnum].p_filesz,
+			phdr[phnum].p_memsz, flag_name, phdr[phnum].p_align);
+	}
+	printf("\nSection to Segment mapping:\n\n");
+
+	for (int phnum = 0; phnum < elf_head.e_phnum; phnum++) {
+		printf("%-5d", phnum);
+		//段表末尾
+		Elf32_Off segment_end = phdr[phnum].p_vaddr + phdr[phnum].p_memsz;
+		//遍历节表查看位置是否重叠
+		for (int shnum = 0; shnum < elf_head.e_shnum; shnum++) {
+			//得到节表的末尾位置
+			Elf32_Off section_end = shdr[shnum].sh_addr + shdr[shnum].sh_size;
+
+			//查看节表的位置是否和段的内存位置重叠
+			if ((shdr[shnum].sh_addr>= phdr[phnum].p_vaddr && shdr[shnum].sh_addr <= segment_end) && 
+				(section_end >= phdr[phnum].p_vaddr && section_end <= segment_end)) {
+				//打印节名称
+				printf("%s ",shstrtab+ shdr[shnum].sh_name);
+			}
+		}
+		printf("\n");
+	}
 
 	free(phdr);
+	free(shstrtab);
+	free(shdr);
 }
 
 //解析.dynsym符号表
