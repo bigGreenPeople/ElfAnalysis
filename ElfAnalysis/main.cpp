@@ -11,12 +11,182 @@ void file_header(FILE * fp);
 void section_header(FILE * fp);
 void dynsym_table(FILE * fp);
 void program_table(FILE * fp);
+void rel_table(FILE * fp);
+
+
 int print_dynsym_table_entry(FILE * fp, char *dynstr, int dynsym_num);
 int fp_move(FILE * fp, int offset);
 char * my_strupr(char *str);
 char * get_strtab(FILE * fp, Elf32_Shdr shdr);
+Elf32_Rel * get_reltab(FILE * fp, Elf32_Shdr shdr);
+Elf32_Sym * get_symtab(FILE * fp, Elf32_Shdr shdr);
+const char * get_r_type(Elf32_Word info_type);
+
 Elf32_Shdr * get_elf_shdr(FILE * fp, Elf32_Ehdr elf_head);
 Elf32_Phdr * get_elf_phdr(FILE * fp, Elf32_Ehdr elf_head);
+
+char * get_str_index(char * str, int index);
+
+//得到字符串数组中第index个字符串
+char * get_str_index(char * str, int index) {
+	int temp = 0;
+	char * temp_str = str;
+
+	if (index == temp) {
+		return str;
+	}
+
+	while (1)
+	{
+		if (!*temp_str) {
+			temp++;
+			if (temp == index) {
+				return ++temp_str;
+			}
+		}
+
+		temp_str++;
+	}
+}
+
+const char * get_r_type(Elf32_Word info_type) {
+	switch (info_type)
+	{
+	case 0: return "R_ARM_NONE";
+	case 1: return "R_ARM_PC24"; /* Deprecated */
+	case 2: return "R_ARM_ABS32";
+	case 3: return "R_ARM_REL32";
+	case 4: return "R_ARM_LDR_PC_G0"; /* Also R_ARM_PC13 */
+	case 5: return "R_ARM_ABS16";
+	case 6: return "R_ARM_ABS12";
+	case 7: return "R_ARM_THM_ABS5";
+	case 8: return "R_ARM_ABS8";
+	case 9: return "R_ARM_SBREL32";
+	case 10: return "R_ARM_THM_CALL"; /* Also R_ARM_THM_PC22 */
+	case 11: return "R_ARM_THM_PC8";
+	case 12: return "R_ARM_BREL_ADJ"; /* Also R_ARM_AMP_VCALL9 */
+	case 13: return "R_ARM_TLS_DESC"; /* Also R_ARM_SWI24 */
+	case 14: return "R_ARM_THM_SWI8"; /* Obsolete */
+	case 15: return "R_ARM_XPC25"; /* Obsolete */
+	case 16: return "R_ARM_THM_XPC22"; /* Obsolete */
+	case 17: return "R_ARM_TLS_DTPMOD32";
+	case 18: return "R_ARM_TLS_DTPOFF32";
+	case 19: return "R_ARM_TLS_TPOFF32";
+	case 20: return "R_ARM_COPY";
+	case 21: return "R_ARM_GLOB_DAT";
+	case 22: return "R_ARM_JUMP_SLOT";
+	case 23: return "R_ARM_RELATIVE";
+	case 24: return "R_ARM_GOTOFF32"; /* Also R_ARM_GOTOFF */
+	case 25: return "R_ARM_BASE_PREL"; /* GNU R_ARM_GOTPC */
+	case 26: return "R_ARM_GOT_BREL"; /* GNU R_ARM_GOT32 */
+	case 27: return "R_ARM_PLT32"; /* Deprecated */
+	case 28: return "R_ARM_CALL";
+	case 29: return "R_ARM_JUMP24";
+	case 30: return "R_ARM_THM_JUMP24";
+	case 31: return "R_ARM_BASE_ABS";
+	case 32: return "R_ARM_ALU_PCREL_7_0"; /* Obsolete */
+	case 33: return "R_ARM_ALU_PCREL_15_8"; /* Obsolete */
+	case 34: return "R_ARM_ALU_PCREL_23_15"; /* Obsolete */
+	case 35: return "R_ARM_LDR_SBREL_11_0_NC"; /* Deprecated */
+	case 36: return "R_ARM_ALU_SBREL_19_12_NC"; /* Deprecated */
+	case 37: return "R_ARM_ALU_SBREL_27_20_CK"; /* Deprecated */
+	case 38: return "R_ARM_TARGET1";
+	case 39: return "R_ARM_SBREL31"; /* Deprecated. */
+	case 40: return "R_ARM_V4BX";
+	case 41: return "R_ARM_TARGET2";
+	case 42: return "R_ARM_PREL31";
+	case 43: return "R_ARM_MOVW_ABS_NC";
+	case 44: return "R_ARM_MOVT_ABS";
+	case 45: return "R_ARM_MOVW_PREL_NC";
+	case 46: return "R_ARM_MOVT_PREL";
+	case 47: return "R_ARM_THM_MOVW_ABS_NC";
+	case 48: return "R_ARM_THM_MOVT_ABS";
+	case 49: return "R_ARM_THM_MOVW_PREL_NC";
+	case 50: return "R_ARM_THM_MOVT_PREL";
+	case 51: return "R_ARM_THM_JUMP19";
+	case 52: return "R_ARM_THM_JUMP6";
+	case 53: return "R_ARM_THM_ALU_PREL_11_0";
+	case 54: return "R_ARM_THM_PC12";
+	case 55: return "R_ARM_ABS32_NOI";
+	case 56: return "R_ARM_REL32_NOI";
+	case 57: return "R_ARM_ALU_PC_G0_NC";
+	case 58: return "R_ARM_ALU_PC_G0";
+	case 59: return "R_ARM_ALU_PC_G1_NC";
+	case 60: return "R_ARM_ALU_PC_G1";
+	case 61: return "R_ARM_ALU_PC_G2";
+	case 62: return "R_ARM_LDR_PC_G1";
+	case 63: return "R_ARM_LDR_PC_G2";
+	case 64: return "R_ARM_LDRS_PC_G0";
+	case 65: return "R_ARM_LDRS_PC_G1";
+	case 66: return "R_ARM_LDRS_PC_G2";
+	case 67: return "R_ARM_LDC_PC_G0";
+	case 68: return "R_ARM_LDC_PC_G1";
+	case 69: return "R_ARM_LDC_PC_G2";
+	case 70: return "R_ARM_ALU_SB_G0_NC";
+	case 71: return "R_ARM_ALU_SB_G0";
+	case 72: return "R_ARM_ALU_SB_G1_NC";
+	case 73: return "R_ARM_ALU_SB_G1";
+	case 74: return "R_ARM_ALU_SB_G2";
+	case 75: return "R_ARM_LDR_SB_G0";
+	case 76: return "R_ARM_LDR_SB_G1";
+	case 77: return "R_ARM_LDR_SB_G2";
+	case 78: return "R_ARM_LDRS_SB_G0";
+	case 79: return "R_ARM_LDRS_SB_G1";
+	case 80: return "R_ARM_LDRS_SB_G2";
+	case 81: return "R_ARM_LDC_SB_G0";
+	case 82: return "R_ARM_LDC_SB_G1";
+	case 83: return "R_ARM_LDC_SB_G2";
+	case 84: return "R_ARM_MOVW_BREL_NC";
+	case 85: return "R_ARM_MOVT_BREL";
+	case 86: return "R_ARM_MOVW_BREL";
+	case 87: return "R_ARM_THM_MOVW_BREL_NC";
+	case 88: return "R_ARM_THM_MOVT_BREL";
+	case 89: return "R_ARM_THM_MOVW_BREL";
+	case 90: return "R_ARM_TLS_GOTDESC";
+	case 91: return "R_ARM_TLS_CALL";
+	case 92: return "R_ARM_TLS_DESCSEQ";
+	case 93: return "R_ARM_THM_TLS_CALL";
+	case 94: return "R_ARM_PLT32_ABS";
+	case 95: return "R_ARM_GOT_ABS";
+	case 96: return "R_ARM_GOT_PREL";
+	case 97: return "R_ARM_GOT_BREL12";
+	case 98: return "R_ARM_GOTOFF12";
+	case 99: return "R_ARM_GOTRELAX";
+	case 100: return "R_ARM_GNU_VTENTRY";
+	case 101: return "R_ARM_GNU_VTINHERIT";
+	case 102: return "R_ARM_THM_JUMP11"; /* Also R_ARM_THM_PC11 */
+	case 103: return "R_ARM_THM_JUMP8"; /* Also R_ARM_THM_PC9 */
+	case 104: return "R_ARM_TLS_GD32";
+	case 105: return "R_ARM_TLS_LDM32";
+	case 106: return "R_ARM_TLS_LDO32";
+	case 107: return "R_ARM_TLS_IE32";
+	case 108: return "R_ARM_TLS_LE32";
+	case 109: return "R_ARM_TLS_LDO12";
+	case 110: return "R_ARM_TLS_LE12";
+	case 111: return "R_ARM_TLS_IE12GP";
+		/* 112-127 R_ARM_PRIVATE_<n> */
+	case 128: return "R_ARM_ME_TOO"; /* Obsolete */
+	case 129: return "R_ARM_THM_TLS_DESCSEQ16";
+	case 130: return "R_ARM_THM_TLS_DESCSEQ32";
+	case 131: return "R_ARM_THM_GOT_BREL12";
+	case 132: return "R_ARM_THM_ALU_ABS_G0_NC";
+	case 133: return "R_ARM_THM_ALU_ABS_G1_NC";
+	case 134: return "R_ARM_THM_ALU_ABS_G2_NC";
+	case 135: return "R_ARM_THM_ALU_ABS_G3";
+		/* 136-159 Reserved for future allocation. */
+	case 160: return "R_ARM_IRELATIVE";
+		/* 161-255 Reserved for future allocation. */
+	case 249: return "R_ARM_RXPC25";
+	case 250: return "R_ARM_RSBREL32";
+	case 251: return "R_ARM_THM_RPC22";
+	case 252: return "R_ARM_RREL32";
+	case 253: return "R_ARM_RABS32";
+	case 254: return "R_ARM_RPC24";
+	case 255: return "R_ARM_RBASE";
+	default:
+		return "";
+	}
+}
 
 
 /*
@@ -82,6 +252,39 @@ Elf32_Phdr * get_elf_phdr(FILE * fp, Elf32_Ehdr elf_head) {
 		return NULL;
 	}
 	return phdr;
+}
+
+/*
+	得重定位表数组
+	需释放内存
+	shdr 一般是类型是 SHT_RELA或者SHT_REL
+*/
+Elf32_Rel * get_reltab(FILE * fp, Elf32_Shdr shdr) {
+	//定位到重定位表位置
+	if (fp_move(fp, shdr.sh_offset)) {
+		return NULL;
+	}
+
+	//得到重定位表的长度（字节数）
+	int sh_size = shdr.sh_size;
+	//char shstrtab[i];
+	//分配容纳重定位表的大小
+	Elf32_Rel *shreltab = (Elf32_Rel*)malloc(sizeof(Elf32_Rel) * sh_size);
+	memset(shreltab, 0, sizeof(char) * sh_size);
+
+	if (shreltab == NULL) {
+		printf("分配内存 shreltab ERROR \n");
+		return NULL;
+	}
+
+	int result;
+	result = fread(shreltab, sh_size, 1, fp);
+	if (result == 0) {
+		printf("READ ERROR\n");
+		free(shreltab);
+		return NULL;
+	}
+	return shreltab;
 }
 
 /*
@@ -238,7 +441,7 @@ int print_dynsym_table_entry(FILE * fp, char *dynstr, int dynsym_num) {
 
 		printf("%-5d %-8.08X %-8d %-8s %-8s %-8s %-8s %-8s\n",
 			dynsym_index, psym[dynsym_index].st_value, psym[dynsym_index].st_size, sym_type, sym_bind, sym_vis
-			, sym_ndx, dynstr+ psym[dynsym_index].st_name);
+			, sym_ndx, dynstr + psym[dynsym_index].st_name);
 	}
 
 	free(psym);
@@ -286,6 +489,9 @@ int main(int argc, char* argv[]) {
 	else if (!strcmp(argv[1], "-l")) {
 		program_table(fp);
 	}
+	else if (!strcmp(argv[1], "-r")) {
+		rel_table(fp);
+	}
 	//help();
 
 	if (fp) {
@@ -299,6 +505,88 @@ int main(int argc, char* argv[]) {
 		}
 	}
 	return 0;
+}
+
+//解析重定位表
+void rel_table(FILE * fp) {
+	Elf32_Ehdr elf_head;
+	fread(&elf_head, sizeof(Elf32_Ehdr), 1, fp);
+	//这是一个段表数组
+	Elf32_Phdr *phdr = get_elf_phdr(fp, elf_head);
+	if (!phdr) {
+		exit(0);
+	}
+	//这是一个Elf32_Shdr数组
+	Elf32_Shdr *shdr = get_elf_shdr(fp, elf_head);
+	if (!shdr) {
+		exit(0);
+	}
+	//得到字符串表信息
+	char *shstrtab = get_strtab(fp, shdr[elf_head.e_shstrndx]);
+	if (!shstrtab) {
+		exit(0);
+	}
+
+	//得到符号字符串表信息
+	//找到.dynstr表
+	char * dynstr = NULL;
+	char * temp = shstrtab;
+	for (int shnum = 0; shnum < elf_head.e_shnum; ++shnum) {
+		temp = shstrtab;
+		//shdr[shnum].sh_name字符串表的偏移
+		temp = temp + shdr[shnum].sh_name;
+		if (!strcmp(temp, ".dynstr"))
+		{
+			dynstr = get_strtab(fp, shdr[shnum]);
+			if (!dynstr) {
+				exit(0);
+			}
+			break;
+		}
+	}
+
+	//得到符号表信息
+	Elf32_Sym * symtab = NULL;
+
+	for (int shnum = 0; shnum < elf_head.e_shnum; ++shnum) {
+		temp = shstrtab;
+		//shdr[shnum].sh_name字符串表的偏移
+		temp = temp + shdr[shnum].sh_name;
+		if (!strcmp(temp, ".dynsym"))
+		{
+			symtab= get_symtab(fp, shdr[shnum]);
+		}
+	}
+
+	//循环找到重定位表
+	for (int shnum = 0; shnum < elf_head.e_shnum; shnum++) {
+		if (shdr[shnum].sh_type == SHT_REL) {
+			//重定位表大小
+			int rel_num = shdr[shnum].sh_size / shdr[shnum].sh_entsize;
+			printf(" 重定位表'%s' 起始位置:0x%X 包含%d个重定位项 \n", shstrtab + shdr[shnum].sh_name, shdr[shnum].sh_addr, rel_num);
+			printf("%-10s %-10s %-15s %-10s %-10s\n", "重定位地址", "重定位信息", "重定位类型", "符号值", "符号名称");
+			Elf32_Rel * reltab = get_reltab(fp, shdr[shnum]);
+
+
+			for (int rel_index = 0; rel_index < rel_num; rel_index++) {
+
+
+				printf("%-10.08X %-10.08X %-15s %-10.8x %-10s\n", reltab[rel_index].r_offset, reltab[rel_index].r_info,
+					get_r_type(ELF32_R_TYPE(reltab[rel_index].r_info)),
+					symtab[ELF32_R_SYM(reltab[rel_index].r_info)].st_value, get_str_index(dynstr,ELF32_R_SYM(reltab[rel_index].r_info)));
+			}
+
+			printf("\n");
+			free(reltab);
+		}
+
+	}
+
+	free(symtab);
+	free(dynstr);
+	free(phdr);
+	free(shstrtab);
+	free(shdr);
 }
 
 //解析段头表
@@ -325,7 +613,7 @@ void program_table(FILE * fp) {
 
 	printf("\n各个Program表信息:\n");
 	printf("%-5s %-20s %-8s %-8s %-8s %-8s %-8s %-8s %-8s\n",
-		"","类型", "文件偏移", "内存地址", "物理地址", "文件大小", "内存大小", "标志","对齐");
+		"", "类型", "文件偏移", "内存地址", "物理地址", "文件大小", "内存大小", "标志", "对齐");
 	for (int phnum = 0; phnum < elf_head.e_phnum; phnum++) {
 
 		char * type_name = (char *)"";
@@ -375,10 +663,10 @@ void program_table(FILE * fp) {
 		case PF_X:
 			flag_name = (char *)"E";
 			break;
-		case PF_W| PF_X:
+		case PF_W | PF_X:
 			flag_name = (char *)"WE";
 			break;
-		case PF_R |PF_W:
+		case PF_R | PF_W:
 			flag_name = (char *)"RW";
 			break;
 		case PF_R | PF_X:
@@ -406,10 +694,10 @@ void program_table(FILE * fp) {
 			Elf32_Off section_end = shdr[shnum].sh_addr + shdr[shnum].sh_size;
 
 			//查看节表的位置是否和段的内存位置重叠
-			if ((shdr[shnum].sh_addr>= phdr[phnum].p_vaddr && shdr[shnum].sh_addr <= segment_end) && 
+			if ((shdr[shnum].sh_addr >= phdr[phnum].p_vaddr && shdr[shnum].sh_addr <= segment_end) &&
 				(section_end >= phdr[phnum].p_vaddr && section_end <= segment_end)) {
 				//打印节名称
-				printf("%s ",shstrtab+ shdr[shnum].sh_name);
+				printf("%s ", shstrtab + shdr[shnum].sh_name);
 			}
 		}
 		printf("\n");
@@ -482,7 +770,7 @@ void section_header(FILE * fp) {
 	fread(&elf_head, sizeof(Elf32_Ehdr), 1, fp);
 	printf("共有 %d 个节头, 节头表开始文件偏移为 0x%02x:\n", elf_head.e_shnum, elf_head.e_shoff);
 	//这是一个Elf32_Shdr数组
-	Elf32_Shdr *shdr = get_elf_shdr(fp,elf_head);
+	Elf32_Shdr *shdr = get_elf_shdr(fp, elf_head);
 	if (!shdr) {
 		exit(0);
 	}
@@ -754,4 +1042,31 @@ char * my_strupr(char *str)
 		tmp++;
 	}
 	return orign;
+}
+
+/*
+	得到符号表
+	释放内存
+*/
+Elf32_Sym * get_symtab(FILE * fp, Elf32_Shdr shdr) {
+	//定位位置
+	if (fp_move(fp, shdr.sh_offset)) {
+		return NULL;
+	}
+	//开辟内存
+	Elf32_Sym *psym = (Elf32_Sym*)malloc(sizeof(Elf32_Sym) *(shdr.sh_size / shdr.sh_entsize));
+	memset(psym, 0, sizeof(Elf32_Sym) *(shdr.sh_size / shdr.sh_entsize));
+	if (psym == NULL) {
+		printf("psym malloc failed\n");
+		return 0;
+	}
+	//读取符号表
+	int result;
+	result = fread(psym, sizeof(Elf32_Sym), (shdr.sh_size / shdr.sh_entsize), fp);
+	if (result == 0) {
+		printf("READ ERROR\n");
+		free(psym);
+		return NULL;
+	}
+	return psym;
 }
